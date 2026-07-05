@@ -13,39 +13,27 @@ st.set_page_config(
 )
 
 # =========================
-# 读取模型（加缓存，防重复加载崩溃）
+# 读取模型
 # =========================
-@st.cache_resource
-def load_models():
-    PE_MODEL = joblib.load("PE_model.pkl")
-    EARLY_MODEL = joblib.load("Early_PE_model.pkl")
-    PDO_MODEL = joblib.load("PDO_model.pkl")
-    GA_MODEL = joblib.load("GA_model.pkl")
-    return PE_MODEL, EARLY_MODEL, PDO_MODEL, GA_MODEL
+PE_MODEL = joblib.load("PE_model.pkl")
+EARLY_MODEL = joblib.load("Early_PE_model.pkl")
+PDO_MODEL = joblib.load("PDO_model.pkl")
+GA_MODEL = joblib.load("GA_model.pkl")
 
-PE_MODEL, EARLY_MODEL, PDO_MODEL, GA_MODEL = load_models()
-
-FEATURES = getattr(PE_MODEL, "feature_names_in_", None)
-
-if FEATURES is None:
-    st.error("模型缺少 feature_names_in_，请重新保存模型")
-    st.stop()
-
+FEATURES = PE_MODEL.feature_names_in_
 
 # =========================
 # 工具函数
 # =========================
 def calc_hsi(ast, alt, bmi):
-    try:
-        if ast <= 0 or alt <= 0:
-            return 0.0
-        return 8 * (alt / ast) + bmi + 2
-    except:
-        return 0.0
+    if ast is None or alt is None:
+        return np.nan
+    if ast <= 0 or alt <= 0:
+        return np.nan
+    return 8 * (alt / ast) + bmi + 2
 
 
 def risk_level(risk):
-    risk = float(np.nan_to_num(risk, nan=0.0))
     if risk < 0.05:
         return "🟢 低风险"
     elif risk < 0.15:
@@ -55,37 +43,30 @@ def risk_level(risk):
 
 
 def week_to_ga(x):
-    try:
-        x = float(x)
-        week = int(x)
-        day = round((x - week) * 7)
-        if day == 7:
-            week += 1
-            day = 0
-        return f"{week}+{day}"
-    except:
-        return "N/A"
-
-
-def safe_proba(model, X):
-    if hasattr(model, "predict_proba"):
-        return float(model.predict_proba(X)[0, 1])
-    return float(model.predict(X)[0])
+    week = int(x)
+    day = round((x - week) * 7)
+    if day == 7:
+        week += 1
+        day = 0
+    return f"{week}+{day}"
 
 
 # =========================
-# UI
+# 标题
 # =========================
 st.title("🩺 子痫前期风险预测系统")
+
 st.warning("⚠️ 本系统仅供科研与教学用途，不用于临床诊断或治疗决策")
 
-st.markdown("基于 FMF核心指标 + 血小板 + HSI + 超声指标 构建的多模型预测系统。")
-
+st.markdown("""
+基于 FMF核心指标 + 血小板 + HSI + 超声指标 构建的多模型预测系统。
+""")
 
 # =========================
 # 输入
 # =========================
 st.header("① 基本信息")
+
 c1, c2, c3 = st.columns(3)
 
 with c1:
@@ -97,8 +78,8 @@ with c2:
 with c3:
     parity = st.number_input("产次", 0, 10, 0)
 
-
 st.header("② 高危病史")
+
 c1, c2, c3 = st.columns(3)
 
 with c1:
@@ -110,8 +91,8 @@ with c2:
 with c3:
     diabetes = st.selectbox("糖尿病", [0, 1])
 
-
 st.header("③ FMF核心指标")
+
 c1, c2, c3 = st.columns(3)
 
 with c1:
@@ -123,12 +104,12 @@ with c2:
 with c3:
     mom_map = st.number_input("MoM MAP", value=1.0)
 
-
 st.header("④ 血小板")
+
 Plt = st.number_input("Platelet", 50.0, 1000.0, 250.0)
 
-
 st.header("⑤ HSI计算")
+
 c1, c2 = st.columns(2)
 
 with c1:
@@ -140,22 +121,14 @@ with c2:
 HSI = calc_hsi(AST, ALT, BMI)
 st.metric("HSI", f"{HSI:.2f}")
 
-
 st.header("⑥ 超声指标")
+
 EFW_percentile = st.number_input("EFW Percentile", 0.0, 100.0, 50.0)
 
-
 # =========================
-# 预测按钮（关键：避免反复rerun崩UI）
+# 预测
 # =========================
-if "run" not in st.session_state:
-    st.session_state.run = False
-
 if st.button("🚀 开始预测"):
-    st.session_state.run = True
-
-
-if st.session_state.run:
 
     X = pd.DataFrame([{
         "age": age,
@@ -172,28 +145,27 @@ if st.session_state.run:
         "EFW_percentile": EFW_percentile
     }])
 
+    # =========================
+    # ⭐ 稳定性核心处理
+    # =========================
     X = X.reindex(columns=FEATURES)
+
     X = X.apply(pd.to_numeric, errors="coerce")
     X = X.replace([np.inf, -np.inf], np.nan)
 
-    # ⚠️ 不用0填（医学上更安全）
-    X = X.fillna(X.mean())
+    # ⭐ 云端最稳定策略
+    X = X.fillna(0)
 
+    # 防sklearn bug
     X = X.astype(np.float32)
 
     # =========================
     # 预测
     # =========================
-    pe_risk = safe_proba(PE_MODEL, X)
-    early_risk = safe_proba(EARLY_MODEL, X)
-    pdo_risk = safe_proba(PDO_MODEL, X)
-    ga_pred = float(GA_MODEL.predict(X)[0])
-
-    # 防 NaN
-    pe_risk = float(np.nan_to_num(pe_risk))
-    early_risk = float(np.nan_to_num(early_risk))
-    pdo_risk = float(np.nan_to_num(pdo_risk))
-    ga_pred = float(np.nan_to_num(ga_pred))
+    pe_risk = PE_MODEL.predict_proba(X)[0, 1]
+    early_risk = EARLY_MODEL.predict_proba(X)[0, 1]
+    pdo_risk = PDO_MODEL.predict_proba(X)[0, 1]
+    ga_pred = GA_MODEL.predict(X)[0]
 
     # =========================
     # 输出
@@ -218,16 +190,6 @@ if st.session_state.run:
     with c4:
         st.metric("预测分娩孕周", week_to_ga(ga_pred))
         st.write(f"{ga_pred:.2f} 周")
-
-    st.divider()
-
-    st.subheader("模型输入数据")
-    st.dataframe(X.astype(str))  # ⚠️ 防前端崩溃关键修复
-
-    if st.button("🔄 重置"):
-        st.session_state.run = False
-
-    st.success("本系统仅供科研与教学用途，不用于临床诊断或治疗决策")
 
     st.divider()
     st.subheader("模型输入数据")
