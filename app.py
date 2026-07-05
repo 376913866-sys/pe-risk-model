@@ -258,6 +258,11 @@ if st.button("🚀 开始预测"):
         "EFW_percentile":[EFW_percentile]
 
     })
+    X = X.reindex(columns=model.feature_names_in_)
+
+    X = X.replace([np.inf, -np.inf], np.nan)
+
+    X = X.astype(float)
 
     pe_risk = PE_MODEL.predict_proba(X)[0,1]
 
