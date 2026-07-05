@@ -258,7 +258,7 @@ if st.button("🚀 开始预测"):
         "EFW_percentile":[EFW_percentile]
 
     })
-    X = X.reindex(columns=model.feature_names_in_)
+    X = X.reindex(columns=PE_MODEL.feature_names_in_)
 
     X = X.replace([np.inf, -np.inf], np.nan)
 
