@@ -3,18 +3,18 @@ import pandas as pd
 import numpy as np
 import joblib
 
-# =====================================
+# =========================
 # 页面设置
-# =====================================
+# =========================
 st.set_page_config(
     page_title="Preeclampsia Risk Prediction",
     page_icon="🩺",
     layout="wide"
 )
 
-# =====================================
+# =========================
 # 读取模型
-# =====================================
+# =========================
 PE_MODEL = joblib.load("PE_model.pkl")
 EARLY_MODEL = joblib.load("Early_PE_model.pkl")
 PDO_MODEL = joblib.load("PDO_model.pkl")
@@ -22,10 +22,12 @@ GA_MODEL = joblib.load("GA_model.pkl")
 
 FEATURES = PE_MODEL.feature_names_in_
 
-# =====================================
+# =========================
 # 工具函数
-# =====================================
+# =========================
 def calc_hsi(ast, alt, bmi):
+    if ast is None or alt is None:
+        return np.nan
     if ast <= 0 or alt <= 0:
         return np.nan
     return 8 * (alt / ast) + bmi + 2
@@ -49,20 +51,20 @@ def week_to_ga(x):
     return f"{week}+{day}"
 
 
-# =====================================
+# =========================
 # 标题
-# =====================================
+# =========================
 st.title("🩺 子痫前期风险预测系统")
 
 st.warning("⚠️ 本系统仅供科研与教学用途，不用于临床诊断或治疗决策")
 
 st.markdown("""
-基于 FMF核心指标 + 血小板 + HSI + 超声指标（EFW）构建的多模型预测系统。
+基于 FMF核心指标 + 血小板 + HSI + 超声指标 构建的多模型预测系统。
 """)
 
-# =====================================
-# 输入区
-# =====================================
+# =========================
+# 输入
+# =========================
 st.header("① 基本信息")
 
 c1, c2, c3 = st.columns(3)
@@ -117,16 +119,15 @@ with c2:
     ALT = st.number_input("ALT", 1.0, 200.0, 20.0)
 
 HSI = calc_hsi(AST, ALT, BMI)
-
 st.metric("HSI", f"{HSI:.2f}")
 
 st.header("⑥ 超声指标")
 
 EFW_percentile = st.number_input("EFW Percentile", 0.0, 100.0, 50.0)
 
-# =====================================
+# =========================
 # 预测
-# =====================================
+# =========================
 if st.button("🚀 开始预测"):
 
     X = pd.DataFrame([{
@@ -144,20 +145,31 @@ if st.button("🚀 开始预测"):
         "EFW_percentile": EFW_percentile
     }])
 
-    # ===== 核心稳定处理 =====
+    # =========================
+    # ⭐ 稳定性核心处理
+    # =========================
     X = X.reindex(columns=FEATURES)
+
     X = X.apply(pd.to_numeric, errors="coerce")
     X = X.replace([np.inf, -np.inf], np.nan)
-    X = X.fillna(X.median(numeric_only=True))
-    X = X.astype(float)
 
-    # ===== 预测 =====
+    # ⭐ 云端最稳定策略
+    X = X.fillna(0)
+
+    # 防sklearn bug
+    X = X.astype(np.float32)
+
+    # =========================
+    # 预测
+    # =========================
     pe_risk = PE_MODEL.predict_proba(X)[0, 1]
     early_risk = EARLY_MODEL.predict_proba(X)[0, 1]
     pdo_risk = PDO_MODEL.predict_proba(X)[0, 1]
     ga_pred = GA_MODEL.predict(X)[0]
 
-    # ===== 输出 =====
+    # =========================
+    # 输出
+    # =========================
     st.divider()
     st.header("📊 预测结果")
 
@@ -182,3 +194,5 @@ if st.button("🚀 开始预测"):
     st.divider()
     st.subheader("模型输入数据")
     st.dataframe(X)
+
+    st.success("本系统仅供科研与教学用途，不用于临床诊断或治疗决策")
