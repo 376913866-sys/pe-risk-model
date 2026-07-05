@@ -260,9 +260,14 @@ if st.button("🚀 开始预测"):
     })
     X = X.reindex(columns=PE_MODEL.feature_names_in_)
 
-    X = X.replace([np.inf, -np.inf], np.nan)
+# 1️⃣ 转换数值（防止字符串/异常）
+X = X.apply(pd.to_numeric, errors="coerce")
 
-    X = X.astype(float)
+# 2️⃣ 处理 inf
+X = X.replace([np.inf, -np.inf], np.nan)
+
+# 3️⃣ 缺失值填补（关键！！！）
+X = X.fillna(X.median())
 
     pe_risk = PE_MODEL.predict_proba(X)[0,1]
 
